@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Juego de Memoria</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: #ecf0f1;
+      color: #2c3e50;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 10px;
+      font-size: 16px; /* base normal */
+    }
+
+    #juego-container {
+      width: 100%;
+      max-width: 1200px;
+      text-align: center;
+    }
+
+    h1 { margin-top: 0; font-size: 2rem; }
+
+    #form-jugador { margin: 15px 0; }
+    input[type="text"] {
+      padding: 10px;
+      font-size: 1rem;
+      width: 70%;
+      max-width: 250px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 1rem;
+      cursor: pointer;
+      background-color: #2980b9;
+      border: none;
+      color: white;
+      border-radius: 5px;
+      margin-top: 10px;
+    }
+
+    #info { margin: 10px 0; font-size: 1.1rem; }
+
+    /* Tablero */
+    #tablero {
+      display: grid;
+      gap: 10px;
+      justify-content: center;
+      margin: 20px auto;
+      max-width: 95vw;
+      max-height: 75vh;
+    }
+
+    .carta {
+      background: #2c3e50;
+      color: white;
+      font-size: 1.3rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      cursor: pointer;
+      user-select: none;
+      aspect-ratio: 1 / 1;
+    }
+    .carta img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 10px;
+    }
+    .oculta { background: #2c3e50; }
+    .encontrada { visibility: hidden; }
+
+    /* Pantalla de resultado */
+    #pantallaFinal {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: #27ae60;
+      color: white;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      text-align: center;
+      padding: 20px;
+    }
+    #pantallaFinal h2 {
+      font-size: 2.5rem;
+      margin-bottom: 20px;
+    }
+    #pantallaFinal p {
+      font-size: 2rem;
+      margin: 10px 0 20px;
+    }
+    #pantallaFinal button {
+      background: #2c3e50;
+      font-size: 1.2rem;
+      padding: 12px 24px;
+    }
+
+    /* 📱 En vertical → letra más grande */
+    @media (orientation: portrait) {
+      body { font-size: 22px; } /* sube todo en general */
+      h1 { font-size: 3rem; }
+      input[type="text"] { font-size: 1.4rem; padding: 14px; }
+      button { font-size: 1.4rem; padding: 14px 28px; }
+      #info { font-size: 1.5rem; }
+      .carta { font-size: 1.6rem; }
+      #pantallaFinal h2 { font-size: 3.5rem; }
+      #pantallaFinal p { font-size: 2.5rem; }
+      #pantallaFinal button { font-size: 1.6rem; padding: 16px 32px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="juego-container">
+  <h1>Juego de Memoria</h1>
+
+  <div id="form-jugador">
+    <input type="text" id="nombreJugador" placeholder="Tu nombre..." />
+    <button onclick="iniciarJuego()">Comenzar Juego</button>
+  </div>
+
+  <div id="info" style="display:none;">
+    <strong>Jugador:</strong> <span id="jugadorActual"></span> |
+    <strong>Tiempo:</strong> <span id="cronometro">00:00</span>
+  </div>
+
+  <div id="tablero"></div>
+</div>
+
+<!-- Pantalla Final -->
+<div id="pantallaFinal">
+  <h2 id="resultadoJugador"></h2>
+  <p id="resultadoTiempo"></p>
+  <button onclick="reiniciarJuego()">Volver a jugar</button>
+</div>
+
+<!-- Sonidos -->
+<audio id="sonidoAcierto" src="acierto.mp3"></audio>
+<audio id="sonidoError" src="error.mp3"></audio>
+
+<script>
+  const tablero = document.getElementById('tablero');
+  const nombreInput = document.getElementById('nombreJugador');
+  const jugadorActual = document.getElementById('jugadorActual');
+  const cronometroSpan = document.getElementById('cronometro');
+  const info = document.getElementById('info');
+  const pantallaFinal = document.getElementById('pantallaFinal');
+  const resultadoJugador = document.getElementById('resultadoJugador');
+  const resultadoTiempo = document.getElementById('resultadoTiempo');
+
+  const sonidoAcierto = document.getElementById('sonidoAcierto');
+  const sonidoError = document.getElementById('sonidoError');
+
+  let cartas = [];
+  let seleccionadas = [];
+  let bloqueado = false;
+  let cronometroInterval;
+  let segundos = 0;
+  let jugador = '';
+  const totalCartas = 20;
+
+  function generarPares() {
+    const pares = [];
+    for (let i = 1; i <= 10; i++) {
+      pares.push({ id: i, img: `imagenes/img${i}.jpg` });
+      pares.push({ id: i, img: `imagenes/img${i + 10}.jpg` });
+    }
+    return pares;
+  }
+
+  function mezclar(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+  }
+
+  function ajustarTablero() {
+    if (window.innerWidth > window.innerHeight) {
+      tablero.style.gridTemplateColumns = "repeat(7, 1fr)";
+      tablero.style.gridTemplateRows = "repeat(3, 1fr)";
+    } else {
+      tablero.style.gridTemplateColumns = "repeat(4, 1fr)";
+      tablero.style.gridTemplateRows = "repeat(5, 1fr)";
+    }
+  }
+
+  function iniciarJuego() {
+    const nombre = nombreInput.value.trim();
+    if (nombre === '') {
+      alert("Por favor, ingresa tu nombre.");
+      return;
+    }
+
+    jugador = nombre;
+    jugadorActual.textContent = jugador;
+    nombreInput.value = '';
+    document.getElementById('form-jugador').style.display = 'none';
+    info.style.display = 'block';
+    segundos = 0;
+    actualizarCronometro();
+    cronometroInterval = setInterval(() => {
+      segundos++;
+      actualizarCronometro();
+    }, 1000);
+    crearTablero();
+  }
+
+  function actualizarCronometro() {
+    let min = String(Math.floor(segundos / 60)).padStart(2, '0');
+    let seg = String(segundos % 60).padStart(2, '0');
+    cronometroSpan.textContent = `${min}:${seg}`;
+  }
+
+  function crearTablero() {
+    tablero.innerHTML = '';
+    cartas = [];
+    seleccionadas = [];
+    bloqueado = false;
+
+    ajustarTablero();
+
+    const copiaPares = generarPares();
+    mezclar(copiaPares);
+
+    copiaPares.forEach((obj, index) => {
+      const carta = document.createElement('div');
+      carta.classList.add('carta', 'oculta');
+      carta.dataset.index = index;
+      carta.dataset.id = obj.id;
+      carta.dataset.imagen = obj.img;
+      carta.textContent = index + 1;
+
+      carta.addEventListener('click', () => {
+        if (bloqueado || carta.classList.contains('encontrada') || !carta.classList.contains('oculta')) return;
+
+        mostrarCarta(carta);
+        seleccionadas.push(carta);
+
+        if (seleccionadas.length === 2) {
+          bloqueado = true;
+          verificarPareja();
+        }
+      });
+
+      cartas.push(carta);
+      tablero.appendChild(carta);
+    });
+  }
+
+  function mostrarCarta(carta) {
+    carta.classList.remove('oculta');
+    const img = document.createElement('img');
+    img.src = carta.dataset.imagen;
+    carta.textContent = '';
+    carta.appendChild(img);
+  }
+
+  function ocultarCarta(carta) {
+    carta.innerHTML = parseInt(carta.dataset.index) + 1;
+    carta.classList.add('oculta');
+  }
+
+  function verificarPareja() {
+    const [c1, c2] = seleccionadas;
+
+    if (c1.dataset.id === c2.dataset.id) {
+      sonidoAcierto.play();
+      setTimeout(() => {
+        c1.classList.add('encontrada');
+        c2.classList.add('encontrada');
+        seleccionadas = [];
+        bloqueado = false;
+        verificarFin();
+      }, 500);
+    } else {
+      sonidoError.play();
+      setTimeout(() => {
+        ocultarCarta(c1);
+        ocultarCarta(c2);
+        seleccionadas = [];
+        bloqueado = false;
+      }, 1000);
+    }
+  }
+
+  function verificarFin() {
+    const encontradas = document.querySelectorAll('.carta.encontrada');
+    if (encontradas.length === totalCartas) {
+      clearInterval(cronometroInterval);
+      mostrarPantallaFinal();
+    }
+  }
+
+  function mostrarPantallaFinal() {
+    const tiempo = cronometroSpan.textContent;
+    resultadoJugador.textContent = `¡Bien hecho, ${jugador}!`;
+    resultadoTiempo.textContent = `Tiempo: ${tiempo}`;
+    pantallaFinal.style.display = 'flex';
+  }
+
+  function reiniciarJuego() {
+    pantallaFinal.style.display = 'none';
+    document.getElementById('form-jugador').style.display = 'block';
+    info.style.display = 'none';
+    tablero.innerHTML = '';
+  }
+
+  window.addEventListener('resize', ajustarTablero);
+</script>
+
+</body>
+</html>
